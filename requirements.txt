@@ -24,7 +24,6 @@ brotlicffi==1.2.0.1
 cbor==1.0.0
 cbor2==6.1.1
 cchardet==2.1.7
-cffi==2.0.0
 cffi==1.17.1
 chardet==7.4.3
 checks==0.2
