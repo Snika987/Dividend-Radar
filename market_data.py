@@ -25,5 +25,33 @@ def get_stock_dividends(symbol: str):
         return results
 
     except Exception as e:
-        print(e)
+
+        print(f"Dividend fetch failed for {symbol}: {e}")
+
         return []
+
+
+def get_market_symbols():
+
+    return [
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "HDFCBANK",
+        "ICICIBANK",
+        "SBIN",
+        "ITC",
+        "LT",
+        "NTPC",
+        "POWERGRID",
+        "COALINDIA",
+        "ONGC",
+        "IOC",
+        "BPCL",
+        "HINDZINC",
+        "GAIL",
+        "IRFC",
+        "IRCON",
+        "SAIL",
+        "NMDC"
+    ]

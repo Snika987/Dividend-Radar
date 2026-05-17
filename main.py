@@ -2,10 +2,20 @@ from fastmcp import FastMCP
 import json
 import os
 import webbrowser
-from datetime import datetime
+
+from datetime import (
+    datetime,
+    timedelta
+)
+
 from dotenv import load_dotenv
+
 from kiteconnect import KiteConnect
-from market_data import get_stock_dividends
+
+from market_data import (
+    get_stock_dividends,
+    get_market_symbols
+)
 
 # Load environment variables
 load_dotenv()
@@ -21,8 +31,9 @@ KITE_API_SECRET = os.getenv("KITE_API_SECRET")
 kite = None
 
 
-def save_access_token_to_env(access_token: str):
-    """Save access token to .env file"""
+def save_access_token_to_env(
+    access_token: str
+):
 
     try:
 
@@ -32,20 +43,26 @@ def save_access_token_to_env(access_token: str):
             lines = f.readlines()
 
         updated = False
+
         new_lines = []
 
         for line in lines:
 
-            if line.startswith("KITE_ACCESS_TOKEN="):
+            if line.startswith(
+                "KITE_ACCESS_TOKEN="
+            ):
+
                 new_lines.append(
                     f"KITE_ACCESS_TOKEN={access_token}\n"
                 )
+
                 updated = True
 
             else:
                 new_lines.append(line)
 
         if not updated:
+
             new_lines.append(
                 f"KITE_ACCESS_TOKEN={access_token}\n"
             )
@@ -58,22 +75,23 @@ def save_access_token_to_env(access_token: str):
 
 
 def init_kite_session():
-    """Initialize Kite session"""
 
     global kite
 
     try:
 
-        kite = KiteConnect(api_key=KITE_API_KEY)
+        kite = KiteConnect(
+            api_key=KITE_API_KEY
+        )
 
         kite_access_token = os.getenv(
             "KITE_ACCESS_TOKEN"
         )
 
-        # Try saved token first
         if (
             kite_access_token and
-            kite_access_token != "your_access_token_here"
+            kite_access_token !=
+            "your_access_token_here"
         ):
 
             try:
@@ -84,14 +102,11 @@ def init_kite_session():
 
                 kite.profile()
 
-                print("Using saved Kite token")
-
                 return True
 
             except Exception:
                 pass
 
-        # Interactive login
         login_url = kite.login_url()
 
         try:
@@ -100,7 +115,7 @@ def init_kite_session():
             pass
 
         request_token = input(
-            "Enter request_token from redirect URL: "
+            "Enter request_token: "
         ).strip()
 
         if not request_token:
@@ -115,15 +130,19 @@ def init_kite_session():
             "access_token"
         ]
 
-        kite.set_access_token(access_token)
+        kite.set_access_token(
+            access_token
+        )
 
         kite.profile()
 
-        save_access_token_to_env(access_token)
+        save_access_token_to_env(
+            access_token
+        )
 
         return True
 
-    except Exception as e:
+    except Exception:
 
         import traceback
         traceback.print_exc()
@@ -131,8 +150,7 @@ def init_kite_session():
         return False
 
 
-def get_kite_portfolio():
-    """Fetch portfolio from Kite"""
+def get_kite_portfolio() -> list | None:
 
     try:
 
@@ -146,22 +164,34 @@ def get_kite_portfolio():
         for holding in holdings:
 
             portfolio.append({
-                "symbol": holding.get(
-                    "tradingsymbol"
-                ),
-                "quantity": holding.get(
-                    "quantity"
-                ),
-                "averagePrice": holding.get(
-                    "average_price"
-                ),
-                "lastPrice": holding.get(
-                    "last_price"
-                ),
-                "totalValue": (
-                    holding.get("quantity") *
-                    holding.get("last_price")
-                )
+
+                "symbol":
+                    holding.get(
+                        "tradingsymbol"
+                    ),
+
+                "quantity":
+                    holding.get(
+                        "quantity"
+                    ),
+
+                "averagePrice":
+                    holding.get(
+                        "average_price"
+                    ),
+
+                "lastPrice":
+                    holding.get(
+                        "last_price"
+                    ),
+
+                "totalValue":
+                    holding.get(
+                        "quantity"
+                    ) *
+                    holding.get(
+                        "last_price"
+                    )
             })
 
         return portfolio
@@ -170,31 +200,39 @@ def get_kite_portfolio():
         return None
 
 
-# ================= TOOLS =================
-
-
 @mcp.tool
 def get_my_portfolio() -> str:
-    """Retrieve live stock portfolio"""
 
     if not kite:
 
         return json.dumps({
-            "error": "Kite session not initialized"
+            "error":
+                "Kite session not initialized"
         })
 
-    portfolio = get_kite_portfolio()
+    portfolio: list | None = (
+        get_kite_portfolio()
+    )
 
     if portfolio is None:
 
         return json.dumps({
-            "error": "Failed to fetch portfolio"
+            "error":
+                "Failed to fetch portfolio"
         })
 
+    assert portfolio is not None
+
     return json.dumps({
-        "totalHoldings": len(portfolio),
-        "portfolio": portfolio,
-        "timestamp": datetime.now().isoformat()
+
+        "totalHoldings":
+            len(portfolio),
+
+        "portfolio":
+            portfolio,
+
+        "timestamp":
+            datetime.now().isoformat()
     })
 
 
@@ -202,36 +240,38 @@ def get_my_portfolio() -> str:
 def analyze_dividends_since_purchase(
     symbol: str = ""
 ) -> str:
-    """Analyze dividend payments"""
 
     if not kite:
 
         return json.dumps({
-            "error": "Kite session not initialized"
+            "error":
+                "Kite session not initialized"
         })
 
-    portfolio = get_kite_portfolio()
+    portfolio: list | None = (
+        get_kite_portfolio()
+    )
 
     if portfolio is None:
 
         return json.dumps({
-            "error": "Failed to fetch portfolio"
+            "error":
+                "Failed to fetch portfolio"
         })
+
+    assert portfolio is not None
 
     if symbol.strip():
 
         portfolio = [
+
             p for p in portfolio
-            if p["symbol"] == symbol.upper()
+
+            if p["symbol"] ==
+            symbol.upper()
         ]
 
-    if not portfolio:
-
-        return json.dumps({
-            "error": f"{symbol} not found"
-        })
-
-    analysis = []
+    analysis: list = []
 
     for position in portfolio:
 
@@ -241,25 +281,32 @@ def analyze_dividends_since_purchase(
             stock_symbol
         )
 
-        relevant_dividends = sorted(
-            dividends,
+        dividends.sort(
             key=lambda x: x.get(
-                "paymentDate", ""
+                "paymentDate",
+                ""
             ),
             reverse=True
         )
 
         total_dividend_income = sum(
-            d.get("dividendAmount", 0) *
+
+            d.get(
+                "dividendAmount",
+                0
+            ) *
             position["quantity"]
-            for d in relevant_dividends
+
+            for d in dividends
         )
 
         analysis.append({
 
-            "symbol": stock_symbol,
+            "symbol":
+                stock_symbol,
 
-            "quantity": position["quantity"],
+            "quantity":
+                position["quantity"],
 
             "averagePrice":
                 position["averagePrice"],
@@ -271,10 +318,13 @@ def analyze_dividends_since_purchase(
                 position["totalValue"],
 
             "dividendsPaidTotal":
-                len(relevant_dividends),
+                len(dividends),
 
             "totalDividendIncome":
-                round(total_dividend_income, 2),
+                round(
+                    total_dividend_income,
+                    2
+                ),
 
             "dividendHistory": [
 
@@ -286,19 +336,22 @@ def analyze_dividends_since_purchase(
                         d.get("paymentDate"),
 
                     "amountPerShare":
-                        d.get("dividendAmount"),
+                        d.get(
+                            "dividendAmount"
+                        ),
 
                     "totalAmount":
                         round(
                             d.get(
                                 "dividendAmount",
                                 0
-                            ) * position["quantity"],
+                            ) *
+                            position["quantity"],
                             2
                         )
                 }
 
-                for d in relevant_dividends[:10]
+                for d in dividends[:10]
             ]
         })
 
@@ -309,9 +362,11 @@ def analyze_dividends_since_purchase(
 
     return json.dumps({
 
-        "count": len(analysis),
+        "count":
+            len(analysis),
 
-        "analysis": analysis,
+        "analysis":
+            analysis,
 
         "summary": {
 
@@ -337,19 +392,17 @@ def analyze_dividends_since_purchase(
 
 @mcp.tool
 def get_latest_dividend_announcements(
-    limit: int = 50
+    limit: int = 10
 ) -> str:
-    """Get latest dividend announcements"""
 
-    symbols = [
-        "RELIANCE",
-        "NTPC",
-        "POWERGRID",
-        "IRFC",
-        "IRCON"
-    ]
+    symbols = get_market_symbols()
 
     announcements = []
+
+    cutoff_date = (
+        datetime.now() -
+        timedelta(days=90)
+    )
 
     for symbol in symbols:
 
@@ -357,30 +410,57 @@ def get_latest_dividend_announcements(
             symbol
         )
 
-        for d in dividends[:3]:
+        for d in dividends:
 
-            announcements.append({
+            try:
 
-                "symbol": symbol,
+                dividend_date = (
+                    datetime.fromisoformat(
+                        d["exDate"]
+                    )
+                )
 
-                "companyName": symbol,
+                if (
+                    dividend_date >=
+                    cutoff_date
+                ):
 
-                "exDate":
-                    d.get("exDate"),
+                    announcements.append({
 
-                "recordDate":
-                    d.get("recordDate"),
+                        "symbol":
+                            symbol,
 
-                "paymentDate":
-                    d.get("paymentDate"),
+                        "companyName":
+                            symbol,
 
-                "dividendAmount":
-                    d.get("dividendAmount")
-            })
+                        "exDate":
+                            d.get(
+                                "exDate"
+                            ),
+
+                        "recordDate":
+                            d.get(
+                                "recordDate"
+                            ),
+
+                        "paymentDate":
+                            d.get(
+                                "paymentDate"
+                            ),
+
+                        "dividendAmount":
+                            d.get(
+                                "dividendAmount"
+                            )
+                    })
+
+            except Exception:
+                continue
 
     announcements.sort(
         key=lambda x: x.get(
-            "exDate", ""
+            "exDate",
+            ""
         ),
         reverse=True
     )
@@ -388,7 +468,10 @@ def get_latest_dividend_announcements(
     return json.dumps({
 
         "count":
-            min(len(announcements), limit),
+            min(
+                len(announcements),
+                limit
+            ),
 
         "announcements":
             announcements[:limit],
@@ -397,87 +480,9 @@ def get_latest_dividend_announcements(
             datetime.now().isoformat()
     })
 
-
-@mcp.tool
-def find_high_dividend_stocks(
-    min_dividend: float = 2.0
-) -> str:
-    """Find high dividend stocks"""
-
-    symbols = [
-        "RELIANCE",
-        "NTPC",
-        "POWERGRID",
-        "IRFC",
-        "IRCON"
-    ]
-
-    announcements = []
-
-    for symbol in symbols:
-
-        dividends = get_stock_dividends(
-            symbol
-        )
-
-        for d in dividends[:3]:
-
-            announcements.append({
-
-                "symbol": symbol,
-
-                "companyName": symbol,
-
-                "exDate":
-                    d.get("exDate"),
-
-                "recordDate":
-                    d.get("recordDate"),
-
-                "paymentDate":
-                    d.get("paymentDate"),
-
-                "dividendAmount":
-                    d.get("dividendAmount")
-            })
-
-    high_div_stocks = [
-
-        a for a in announcements
-
-        if a.get(
-            "dividendAmount",
-            0
-        ) >= min_dividend
-    ]
-
-    high_div_stocks.sort(
-        key=lambda x: x.get(
-            "dividendAmount",
-            0
-        ),
-        reverse=True
-    )
-
-    return json.dumps({
-
-        "count": len(high_div_stocks),
-
-        "criteria":
-            f"Minimum dividend: ₹{min_dividend}",
-
-        "stocks":
-            high_div_stocks[:50],
-
-        "timestamp":
-            datetime.now().isoformat()
-    })
-
-
-# ================= RESOURCE =================
-
-
-@mcp.resource("info://dividend-analyzer")
+@mcp.resource(
+    "info://dividend-analyzer"
+)
 def server_info() -> str:
 
     kite_status = (
@@ -505,13 +510,9 @@ def server_info() -> str:
 
             "get_latest_dividend_announcements",
 
-            "find_high_dividend_stocks"
         ]
 
     }, indent=2)
-
-
-# ================= MAIN =================
 
 
 if __name__ == "__main__":
