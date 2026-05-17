@@ -1,0 +1,393 @@
+from fastmcp import FastMCP
+import requests
+import json
+import os
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+from kiteconnect import KiteConnect
+
+# Load environment variables
+load_dotenv()
+
+# Initialize FastMCP
+mcp = FastMCP("Dividend Analyzer")
+
+# Kite API Setup
+KITE_API_KEY = os.getenv("KITE_API_KEY")
+KITE_API_SECRET = os.getenv("KITE_API_SECRET")
+KITE_ACCESS_TOKEN = os.getenv("KITE_ACCESS_TOKEN")
+
+# Intrinio API Setup
+INTRINIO_API_KEY = os.getenv("INTRINIO_API_KEY")
+INTRINIO_BASE_URL = "https://api.intrinio.com"
+
+# Kite session
+kite = None
+
+
+def init_kite_session():
+    """Initialize Kite session with access token"""
+    global kite
+    try:
+        kite = KiteConnect(api_key=KITE_API_KEY)
+        
+        # Set access token directly (no 2FA needed)
+        kite.set_access_token(KITE_ACCESS_TOKEN)
+        
+        # Verify token is valid by making a test call
+        kite.profile()
+        
+        print("✅ Kite session initialized successfully")
+        return True
+    except Exception as e:
+        print(f"❌ Kite authentication failed: {e}")
+        print("⚠️  Make sure your access token is valid and not expired")
+        return False
+
+
+def get_kite_portfolio():
+    """Fetch live portfolio from Kite"""
+    try:
+        if not kite:
+            return None
+        
+        holdings = kite.holdings()
+        
+        portfolio = []
+        for holding in holdings:
+            portfolio.append({
+                "symbol": holding.get("tradingsymbol"),
+                "quantity": holding.get("quantity"),
+                "averagePrice": holding.get("average_price"),
+                "lastPrice": holding.get("last_price"),
+                "totalValue": holding.get("quantity") * holding.get("last_price"),
+            })
+        
+        return portfolio
+    except Exception as e:
+        print(f"Error fetching portfolio: {e}")
+        return None
+
+
+def get_intrinio_dividend_announcements(limit: int = 50):
+    """Fetch dividend announcements from Intrinio (free, accurate)"""
+    try:
+        # Get recent dividend announcements
+        dividend_url = f"{INTRINIO_BASE_URL}/companies/dividends/search?api_key={INTRINIO_API_KEY}"
+        
+        params = {
+            "api_key": INTRINIO_API_KEY,
+            "sort": "-announcement_date",
+            "page_size": limit
+        }
+        
+        response = requests.get(dividend_url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            dividends = []
+            
+            for div in data.get("data", []):
+                dividends.append({
+                    "symbol": div.get("ticker"),
+                    "companyName": div.get("security", {}).get("name"),
+                    "exDate": div.get("ex_date"),
+                    "recordDate": div.get("record_date"),
+                    "paymentDate": div.get("payment_date"),
+                    "dividendAmount": div.get("dividend_per_share"),
+                    "announcementDate": div.get("announcement_date"),
+                })
+            
+            return dividends
+        else:
+            print(f"Intrinio API error: {response.status_code}")
+            return []
+    
+    except Exception as e:
+        print(f"Error fetching dividend announcements: {e}")
+        return []
+
+
+def get_intrinio_stock_dividends(symbol: str):
+    """Get dividend history for a specific stock from Intrinio"""
+    try:
+        url = f"{INTRINIO_BASE_URL}/companies/search?query={symbol}&type=Stock&api_key={INTRINIO_API_KEY}"
+        
+        # First get company ID
+        response = requests.get(url, timeout=10)
+        if response.status_code != 200:
+            return []
+        
+        companies = response.json().get("data", [])
+        if not companies:
+            return []
+        
+        company_id = companies[0].get("id")
+        
+        # Get dividends for this company
+        div_url = f"{INTRINIO_BASE_URL}/companies/{company_id}/dividends?api_key={INTRINIO_API_KEY}&page_size=50"
+        div_response = requests.get(div_url, timeout=10)
+        
+        if div_response.status_code == 200:
+            dividends = []
+            for div in div_response.json().get("data", []):
+                dividends.append({
+                    "symbol": symbol,
+                    "exDate": div.get("ex_date"),
+                    "recordDate": div.get("record_date"),
+                    "paymentDate": div.get("payment_date"),
+                    "dividendAmount": div.get("dividend_per_share"),
+                    "announcementDate": div.get("announcement_date"),
+                })
+            return dividends
+        
+        return []
+    
+    except Exception as e:
+        print(f"Error fetching dividends for {symbol}: {e}")
+        return []
+
+
+def find_high_dividend_stocks_intrinio(min_dividend: float = 2.0):
+    """Find high dividend stocks from Intrinio"""
+    try:
+        url = f"{INTRINIO_BASE_URL}/companies/dividends/search?api_key={INTRINIO_API_KEY}&sort=-dividend_per_share&page_size=100"
+        
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            high_div_stocks = []
+            
+            for div in response.json().get("data", []):
+                if div.get("dividend_per_share", 0) >= min_dividend:
+                    high_div_stocks.append({
+                        "symbol": div.get("ticker"),
+                        "companyName": div.get("security", {}).get("name"),
+                        "dividendAmount": div.get("dividend_per_share"),
+                        "exDate": div.get("ex_date"),
+                        "paymentDate": div.get("payment_date"),
+                        "announcementDate": div.get("announcement_date"),
+                    })
+            
+            return high_div_stocks[:50]
+        
+        return []
+    
+    except Exception as e:
+        print(f"Error finding high dividend stocks: {e}")
+        return []
+
+
+# ============ FASTMCP TOOLS ============
+
+
+@mcp.tool
+def get_my_portfolio() -> str:
+    """Get your live stock portfolio from Zerodha Kite"""
+    
+    if not kite:
+        return json.dumps({
+            "error": "Kite session not initialized. Check your credentials in .env file"
+        })
+    
+    portfolio = get_kite_portfolio()
+    
+    if portfolio is None:
+        return json.dumps({
+            "error": "Failed to fetch portfolio from Kite"
+        })
+    
+    return json.dumps({
+        "totalHoldings": len(portfolio),
+        "portfolio": portfolio,
+        "timestamp": datetime.now().isoformat()
+    })
+
+
+@mcp.tool
+def analyze_dividends_since_purchase(symbol: str = None) -> str:
+    """Analyze which stocks in your Kite portfolio have paid dividends since you bought them.
+    
+    Shows:
+    - Dividends paid since purchase date
+    - Total dividend income per stock
+    - Dividend payment history
+    """
+    
+    if not kite:
+        return json.dumps({
+            "error": "Kite session not initialized"
+        })
+    
+    portfolio = get_kite_portfolio()
+    
+    if portfolio is None:
+        return json.dumps({
+            "error": "Failed to fetch portfolio"
+        })
+    
+    if symbol:
+        portfolio = [p for p in portfolio if p["symbol"] == symbol.upper()]
+    
+    if not portfolio:
+        return json.dumps({
+            "error": f"Symbol {symbol} not found in portfolio"
+        })
+    
+    analysis = []
+    
+    for position in portfolio:
+        stock_symbol = position["symbol"]
+        
+        # Get dividend history for this stock
+        dividends = get_intrinio_stock_dividends(stock_symbol)
+        
+        # Filter dividends (we don't have exact purchase date from Kite, use last 2 years)
+        cutoff_date = datetime.now() - timedelta(days=730)
+        relevant_dividends = [
+            d for d in dividends
+            if d.get("paymentDate") and datetime.fromisoformat(d["paymentDate"][:10]) >= cutoff_date
+        ]
+        
+        total_dividend_income = sum(
+            d.get("dividendAmount", 0) * position["quantity"]
+            for d in relevant_dividends
+        )
+        
+        analysis.append({
+            "symbol": stock_symbol,
+            "quantity": position["quantity"],
+            "averagePrice": position["averagePrice"],
+            "currentPrice": position["lastPrice"],
+            "totalValue": position["totalValue"],
+            "dividendsPaidInLast2Years": len(relevant_dividends),
+            "totalDividendIncome": round(total_dividend_income, 2),
+            "dividendHistory": [
+                {
+                    "exDate": d.get("exDate"),
+                    "paymentDate": d.get("paymentDate"),
+                    "amountPerShare": d.get("dividendAmount"),
+                    "totalAmount": round(d.get("dividendAmount", 0) * position["quantity"], 2),
+                }
+                for d in relevant_dividends[:10]  # Last 10 dividends
+            ]
+        })
+    
+    total_dividend_across_portfolio = sum(a["totalDividendIncome"] for a in analysis)
+    
+    return json.dumps({
+        "count": len(analysis),
+        "analysis": analysis,
+        "summary": {
+            "totalDividendIncome": round(total_dividend_across_portfolio, 2),
+            "stocksWithDividends": len([a for a in analysis if a["dividendsPaidInLast2Years"] > 0]),
+        },
+        "timestamp": datetime.now().isoformat()
+    })
+
+
+@mcp.tool
+def get_latest_dividend_announcements(limit: int = 50) -> str:
+    """Get latest dividend announcements from Indian stock market (via Intrinio)
+    
+    Shows recent dividend announcements across NSE/BSE with:
+    - Ex-dividend date
+    - Payment date
+    - Dividend amount
+    - Company name
+    """
+    
+    announcements = get_intrinio_dividend_announcements(limit)
+    
+    if not announcements:
+        return json.dumps({
+            "error": "Failed to fetch dividend announcements from Intrinio"
+        })
+    
+    # Filter for Indian stocks (BSE/NSE)
+    indian_announcements = [
+        a for a in announcements
+        if a.get("symbol") and not a["symbol"].startswith("X")
+    ][:limit]
+    
+    return json.dumps({
+        "count": len(indian_announcements),
+        "announcements": indian_announcements,
+        "timestamp": datetime.now().isoformat()
+    })
+
+
+@mcp.tool
+def find_high_dividend_stocks(min_dividend: float = 2.0) -> str:
+    """Find stocks announcing high dividends across Indian market (via Intrinio)
+    
+    Args:
+        min_dividend: Minimum dividend per share (default: ₹2.0)
+    
+    Returns:
+        List of high dividend stocks with announcement details
+    """
+    
+    high_div_stocks = find_high_dividend_stocks_intrinio(min_dividend)
+    
+    if not high_div_stocks:
+        return json.dumps({
+            "error": "Failed to fetch high dividend stocks",
+            "note": "Check your Intrinio API key"
+        })
+    
+    # Sort by dividend amount descending
+    high_div_stocks.sort(key=lambda x: x.get("dividendAmount", 0), reverse=True)
+    
+    return json.dumps({
+        "count": len(high_div_stocks),
+        "criteria": f"Minimum dividend: ₹{min_dividend} per share",
+        "stocks": high_div_stocks[:50],
+        "timestamp": datetime.now().isoformat()
+    })
+
+
+# ============ MCP RESOURCE ============
+
+
+@mcp.resource("info://dividend-analyzer")
+def server_info() -> str:
+    """Information about Dividend Analyzer MCP server"""
+    
+    kite_status = "✅ Connected" if kite else "❌ Not connected"
+    
+    info = {
+        "name": "Dividend Analyzer MCP",
+        "description": "Analyze Indian stock dividends from your Kite portfolio",
+        "status": {
+            "kiteConnection": kite_status,
+            "intrinio": "✅ Ready" if INTRINIO_API_KEY else "❌ Not configured"
+        },
+        "tools": [
+            "get_my_portfolio",
+            "analyze_dividends_since_purchase",
+            "get_latest_dividend_announcements",
+            "find_high_dividend_stocks"
+        ]
+    }
+    
+    return json.dumps(info, indent=2)
+
+
+# ============ MAIN ============
+
+
+if __name__ == "__main__":
+    print("🚀 Initializing Dividend Analyzer MCP...")
+    
+    # Initialize Kite session
+    if init_kite_session():
+        print("✅ Ready to serve!")
+    else:
+        print("⚠️  Kite initialization failed. Some features may not work.")
+    
+    # Run MCP server
+    mcp.run(
+        transport="streamable-http",
+        host="0.0.0.0",
+        port=8080)
