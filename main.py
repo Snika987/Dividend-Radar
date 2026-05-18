@@ -1,7 +1,6 @@
 from fastmcp import FastMCP
 import json
 import os
-import webbrowser
 
 from datetime import (
     datetime,
@@ -31,49 +30,6 @@ KITE_API_SECRET = os.getenv("KITE_API_SECRET")
 kite = None
 
 
-def save_access_token_to_env(
-    access_token: str
-):
-
-    try:
-
-        env_path = ".env"
-
-        with open(env_path, "r") as f:
-            lines = f.readlines()
-
-        updated = False
-
-        new_lines = []
-
-        for line in lines:
-
-            if line.startswith(
-                "KITE_ACCESS_TOKEN="
-            ):
-
-                new_lines.append(
-                    f"KITE_ACCESS_TOKEN={access_token}\n"
-                )
-
-                updated = True
-
-            else:
-                new_lines.append(line)
-
-        if not updated:
-
-            new_lines.append(
-                f"KITE_ACCESS_TOKEN={access_token}\n"
-            )
-
-        with open(env_path, "w") as f:
-            f.writelines(new_lines)
-
-    except Exception:
-        pass
-
-
 def init_kite_session():
 
     global kite
@@ -88,6 +44,7 @@ def init_kite_session():
             "KITE_ACCESS_TOKEN"
         )
 
+        # Try existing token
         if (
             kite_access_token and
             kite_access_token !=
@@ -102,45 +59,32 @@ def init_kite_session():
 
                 kite.profile()
 
+                print(
+                    "✅ Existing Kite session restored"
+                )
+
                 return True
 
             except Exception:
-                pass
 
+                print(
+                    "⚠ Existing token expired"
+                )
+
+        # No valid token
         login_url = kite.login_url()
 
-        try:
-            webbrowser.open(login_url)
-        except Exception:
-            pass
-
-        request_token = input(
-            "Enter request_token: "
-        ).strip()
-
-        if not request_token:
-            return False
-
-        session_data = kite.generate_session(
-            request_token,
-            KITE_API_SECRET
+        print("\n")
+        print("🔐 Login required")
+        print("Open this URL manually:")
+        print(login_url)
+        print("\n")
+        print(
+            "Run generate_token.py separately to refresh token."
         )
+        print("\n")
 
-        access_token = session_data[
-            "access_token"
-        ]
-
-        kite.set_access_token(
-            access_token
-        )
-
-        kite.profile()
-
-        save_access_token_to_env(
-            access_token
-        )
-
-        return True
+        return False
 
     except Exception:
 
@@ -197,6 +141,10 @@ def get_kite_portfolio() -> list | None:
         return portfolio
 
     except Exception:
+
+        import traceback
+        traceback.print_exc()
+
         return None
 
 
@@ -210,9 +158,7 @@ def get_my_portfolio() -> str:
                 "Kite session not initialized"
         })
 
-    portfolio: list | None = (
-        get_kite_portfolio()
-    )
+    portfolio = get_kite_portfolio()
 
     if portfolio is None:
 
@@ -220,8 +166,6 @@ def get_my_portfolio() -> str:
             "error":
                 "Failed to fetch portfolio"
         })
-
-    assert portfolio is not None
 
     return json.dumps({
 
@@ -248,9 +192,7 @@ def analyze_dividends_since_purchase(
                 "Kite session not initialized"
         })
 
-    portfolio: list | None = (
-        get_kite_portfolio()
-    )
+    portfolio = get_kite_portfolio()
 
     if portfolio is None:
 
@@ -258,8 +200,6 @@ def analyze_dividends_since_purchase(
             "error":
                 "Failed to fetch portfolio"
         })
-
-    assert portfolio is not None
 
     if symbol.strip():
 
@@ -271,7 +211,7 @@ def analyze_dividends_since_purchase(
             symbol.upper()
         ]
 
-    analysis: list = []
+    analysis = []
 
     for position in portfolio:
 
@@ -480,6 +420,7 @@ def get_latest_dividend_announcements(
             datetime.now().isoformat()
     })
 
+
 @mcp.resource(
     "info://dividend-analyzer"
 )
@@ -522,5 +463,5 @@ if __name__ == "__main__":
     mcp.run(
         transport="streamable-http",
         host="0.0.0.0",
-        port=8080
+        port=8081
     )
